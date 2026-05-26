@@ -269,13 +269,13 @@ def generate_answer(query: str, retrieved_context: str) -> GenerationResult:
 
     logger.error("Gemini generation failed after retries: %s", last_error)
     return GenerationResult(
-        answer="",
+        answer=REFUSAL_MESSAGE,
         model=MODEL_NAME,
         attempts=DEFAULT_RETRY_ATTEMPTS,
         latency_ms=0.0,
         token_count=0,
         input_tokens=0,
         output_tokens=0,
-        finish_reason="",
-        response_length=0,
+        finish_reason="ERROR",
+        response_length=len(REFUSAL_MESSAGE),
     )

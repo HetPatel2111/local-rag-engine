@@ -109,7 +109,9 @@ def answer_query(retriever: ChromaRetriever, query: str) -> AnswerResult:
     generation: GenerationResult = generate_answer(query, context.text)
     latency_ms = (perf_counter() - started) * 1000.0
     answer = generation.answer.strip()
-    found = bool(answer)
+    if not answer:
+        answer = REFUSAL_MESSAGE
+    found = answer != REFUSAL_MESSAGE
     sources = context.sources if found else []
 
     logger.info(
