@@ -86,8 +86,17 @@ If you want to deploy without a local `chroma_db/`, set:
 QDRANT_URL=https://xxxxxx.cloud.qdrant.io
 QDRANT_API_KEY=your_qdrant_api_key
 QDRANT_COLLECTION=vite_docs
+QDRANT_RETRIEVAL_MODE=lexical
 ```
 When `QDRANT_URL` and `QDRANT_API_KEY` are present, the API will use Qdrant for retrieval automatically.
+Use `QDRANT_RETRIEVAL_MODE=lexical` on small free hosts to avoid loading a local embedding model at request time. Use `semantic` only when the host has enough memory for the embedding model.
+
+For free deployments where Gemini quota may be exhausted, you can temporarily set:
+```env
+GENERATION_MODE=extractive
+GEMINI_RETRY_ATTEMPTS=1
+```
+`GENERATION_MODE=extractive` returns grounded text directly from retrieved chunks without calling Gemini.
 
 ## Quick Start
 1. Build the corpus and index:

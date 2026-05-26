@@ -78,7 +78,7 @@ def _build_client():
     return genai.Client(
         api_key=api_key,
         http_options=types.HttpOptions(
-            timeout=DEFAULT_TIMEOUT_MS,
+            timeout=int(getenv("GEMINI_TIMEOUT_MS") or DEFAULT_TIMEOUT_MS),
             retry_options=types.HttpRetryOptions(attempts=1),
         ),
     )
@@ -219,7 +219,8 @@ def generate_answer(query: str, retrieved_context: str) -> GenerationResult:
         )
 
     last_error: Exception | None = None
-    for attempt in range(1, DEFAULT_RETRY_ATTEMPTS + 1):
+    retry_attempts = max(1, int(getenv("GEMINI_RETRY_ATTEMPTS") or DEFAULT_RETRY_ATTEMPTS))
+    for attempt in range(1, retry_attempts + 1):
         try:
             result = _generate_once(query, retrieved_context)
 
@@ -230,10 +231,11 @@ def generate_answer(query: str, retrieved_context: str) -> GenerationResult:
             budgets = [DEFAULT_MAX_OUTPUT_TOKENS, 800, 1200]
             budget_index = 0
             while True:
+                answer_text = result.answer.strip()
                 needs_more = (
-                    len(result.answer.strip()) < 80
+                    len(answer_text) < 80
                     or is_max_tokens(result.finish_reason)
-                    or not _is_complete_answer(result.answer)
+                    or (len(answer_text) < 120 and not _is_complete_answer(answer_text))
                 )
                 if not needs_more:
                     break
@@ -263,15 +265,15 @@ def generate_answer(query: str, retrieved_context: str) -> GenerationResult:
             )
         except Exception as exc:  # pragma: no cover - network failure path
             last_error = exc
-            logger.warning("Gemini attempt %s/%s failed: %s", attempt, DEFAULT_RETRY_ATTEMPTS, exc)
-            if attempt < DEFAULT_RETRY_ATTEMPTS:
+            logger.warning("Gemini attempt %s/%s failed: %s", attempt, retry_attempts, exc)
+            if attempt < retry_attempts:
                 sleep(DEFAULT_RETRY_DELAY_SEC * attempt)
 
     logger.error("Gemini generation failed after retries: %s", last_error)
     return GenerationResult(
         answer=REFUSAL_MESSAGE,
         model=MODEL_NAME,
-        attempts=DEFAULT_RETRY_ATTEMPTS,
+        attempts=retry_attempts,
         latency_ms=0.0,
         token_count=0,
         input_tokens=0,

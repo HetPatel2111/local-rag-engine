@@ -6,7 +6,6 @@ from functools import lru_cache
 import logging
 
 from src.retrieval.answering import AnswerResult, answer_query
-from src.retrieval.retriever import ChromaRetriever
 from src.utils.env import getenv
 
 logger = logging.getLogger(__name__)
@@ -25,6 +24,8 @@ def get_retriever():
             return QdrantRetriever(collection_name=collection)
         except Exception as exc:  # pragma: no cover - optional dependency path
             logger.warning("Qdrant is configured but unavailable; falling back to Chroma: %s", exc)
+    from src.retrieval.retriever import ChromaRetriever
+
     return ChromaRetriever()
 
 

@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Sequence
 
-from src.retrieval.retriever import RetrievalResult
+from src.retrieval.types import RetrievalResult
 from src.utils.text import normalize_whitespace
 
 

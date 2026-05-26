@@ -2,26 +2,14 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from pathlib import Path
 
 import chromadb
 
 from src.embeddings.huggingface import DEFAULT_MODEL_NAME, create_embedder
+from src.retrieval.types import RetrievalResult
 from src.utils.env import load_dotenv
 from src.utils.text import clean_title
-
-
-@dataclass(frozen=True)
-class RetrievalResult:
-    """A single retrieved chunk."""
-
-    score: float
-    url: str
-    title: str
-    section: str = ""
-    chunk_id: str = ""
-    text: str = ""
 
 
 class ChromaRetriever:
