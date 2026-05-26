@@ -205,14 +205,6 @@ Smoke-test checks on the indexed Vite corpus:
 This project is licensed under the MIT License. See [LICENSE](LICENSE).
 
 ## GitHub Publishing Notes
-- Suggested repository name: `vite-docs-rag-engine`
-- Suggested description: `A local, confidence-gated RAG engine for the Vite documentation built with Python and ChromaDB.`
-- Suggested topics: `python`, `rag`, `chromadb`, `huggingface`, `langchain`, `vector-database`, `retrieval-augmented-generation`, `vite`, `nlp`
-- Suggested commit messages:
-  - `feat: add production CLI and answer synthesis`
-  - `refactor: move pipeline into src packages`
-  - `docs: add architecture and evaluation notes`
-  - `chore: add tests and publishing files`
 - First release notes:
   - `v1.0.0`
   - Local Vite documentation ingestion
