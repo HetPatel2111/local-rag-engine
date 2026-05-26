@@ -1,0 +1,8 @@
+beautifulsoup4
+chromadb
+langchain
+langchain-huggingface
+requests
+sentence-transformers
+pytest
+
