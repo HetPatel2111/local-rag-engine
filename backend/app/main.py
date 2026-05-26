@@ -11,19 +11,25 @@ from fastapi.middleware.cors import CORSMiddleware
 from backend.app.schemas import AskRequest, AskResponse, ErrorResponse
 from backend.app.services.rag_service import ask_rag
 from src.utils.app_logging import configure_logging
+from src.utils.env import getenv
 
 configure_logging(log_file="api.log")
 logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Semantic Docs RAG API", version="2.0.0")
 
+raw_origins = (getenv("CORS_ALLOW_ORIGINS") or "").strip()
+extra_origins = [item.strip() for item in raw_origins.split(",") if item.strip()] if raw_origins else []
+allow_origins = [
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+    "https://local-rag-engine.vercel.app",
+    *extra_origins,
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:5173",
-        "http://127.0.0.1:5173",
-        "https://local-rag-engine.vercel.app",
-    ],
+    allow_origins=allow_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
