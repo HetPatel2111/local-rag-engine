@@ -18,8 +18,18 @@ logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Semantic Docs RAG API", version="2.0.0")
 
+def _normalize_origin(value: str) -> str:
+    origin = value.strip()
+    if origin.endswith("/"):
+        origin = origin[:-1]
+    return origin
+
 raw_origins = (getenv("CORS_ALLOW_ORIGINS") or "").strip()
-extra_origins = [item.strip() for item in raw_origins.split(",") if item.strip()] if raw_origins else []
+extra_origins = (
+    [_normalize_origin(item) for item in raw_origins.split(",") if _normalize_origin(item)]
+    if raw_origins
+    else []
+)
 allow_origins = [
     "http://localhost:5173",
     "http://127.0.0.1:5173",
