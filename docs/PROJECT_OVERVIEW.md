@@ -1,40 +1,48 @@
 # Project Overview
 
 ## Architecture
-The system is organized as a local, offline-capable RAG pipeline:
+The repository is organized around a Markdown knowledge base rather than raw HTML.
 
-1. `src/ingestion/sitemap.py` downloads and parses `sitemap.xml`.
-2. `src/processing/html_cleaner.py` extracts readable document text.
-3. `src/processing/chunker.py` turns pages into overlapping chunks.
+1. `src/ingestion/sitemap.py` loads and deduplicates sitemap URLs.
+2. `src/processing/html_cleaner.py` removes site chrome and converts HTML to Markdown.
+3. `src/processing/chunker.py` splits Markdown by heading hierarchy.
 4. `src/embeddings/huggingface.py` creates normalized embeddings.
-5. `src/retrieval/retriever.py` stores and queries vectors in Chroma.
-6. `src/retrieval/answering.py` gates confidence and synthesizes a concise answer.
-7. `main.py` exposes the interactive CLI.
+5. `src/pipeline/build.py` writes the Chroma index.
+6. `src/retrieval/retriever.py` loads the persistent collection.
+7. `src/retrieval/answering.py` filters weak results and synthesizes the final answer.
+8. `main.py` and `step6.py` provide the CLI entrypoint.
 
 ## Tradeoffs
-- The pipeline is intentionally local-first to avoid dependency on paid infrastructure.
-- The answer stage is extractive, not generative, which reduces hallucinations but limits fluency.
-- Sentence-level synthesis improves readability while keeping implementation lightweight.
-- Chroma was chosen for simplicity and persistence rather than maximum scale.
+- A Markdown knowledge base adds one more build stage, but it removes HTML noise and makes debugging much easier.
+- Structural chunking is more deterministic than fixed-size splitting, but it requires cleaner source markup.
+- The system is extractive rather than generative, which reduces hallucination risk.
+- Chroma keeps the stack simple and local, but it is not a distributed retrieval backend.
 
 ## Chunking Decisions
-- Chunk size: `600` characters
-- Chunk overlap: `100` characters
-- Rationale: this keeps chunks small enough for stable retrieval while preserving local context across section boundaries.
+- The document title is taken from the page metadata or the most meaningful heading.
+- `#` represents the document title.
+- `##` and `###` drive section boundaries.
+- A chunk is split when it grows beyond roughly `1200` characters.
+- Small neighboring chunks are merged when they are below `300` characters.
 
 ## Why Chroma
-- Persistent on-disk storage
-- Easy local setup
-- Strong fit for single-machine demos and portfolio projects
-- Simple query interface for dense vector search
+- It persists locally on disk.
+- It keeps the demo self-contained.
+- It is easy to inspect during development.
+- It fits the scale of a documentation corpus without added infrastructure.
 
 ## Confidence Threshold
-- Retrieval is intentionally conservative.
-- If the best retrieved chunk is below the confidence threshold, the system returns a refusal instead of guessing.
-- This is especially important for out-of-domain questions and weak semantic matches.
+- The retriever keeps the top `5` matches.
+- Only chunks within `90%` of the best score are considered for synthesis.
+- If the best score is below `0.70`, the system refuses to answer.
+- This prevents weak semantic matches from being presented as facts.
 
-## Notes for Reviewers
-- The project was designed to be easy to inspect, reproduce, and demo locally.
-- The code favors clarity and maintainability over framework complexity.
-- The repository keeps legacy step scripts for reference, but `main.py` is the recommended entrypoint.
+## Evaluation Notes
+- The repository includes a generated evaluation report in `docs/evaluation_report.md`.
+- The report captures top1 relevance, false positives, confidence distribution, and latency.
+
+## Reviewer Notes
+- The code favors clear module boundaries and typed data models.
+- Build artifacts are separated from source code.
+- The repository is ready for a portfolio review or a technical screening discussion.
 

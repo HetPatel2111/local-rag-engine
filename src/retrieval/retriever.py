@@ -20,8 +20,9 @@ class RetrievalResult:
     score: float
     url: str
     title: str
-    chunk_id: str
-    text: str
+    section: str = ""
+    chunk_id: str = ""
+    text: str = ""
 
 
 class ChromaRetriever:
@@ -91,6 +92,7 @@ class ChromaRetriever:
                     score=float(score),
                     url=str(metadata.get("url", "")),
                     title=clean_title(str(metadata.get("title", ""))),
+                    section=str(metadata.get("section", "")),
                     chunk_id=str(metadata.get("chunk_id", "")),
                     text=str(documents[index]),
                 )
@@ -102,4 +104,3 @@ class ChromaRetriever:
     def _dot(left: list[float], right: list[float]) -> float:
         """Compute a simple dot product for similarity ranking."""
         return float(sum(left_value * right_value for left_value, right_value in zip(left, right)))
-

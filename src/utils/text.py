@@ -21,6 +21,10 @@ def clean_title(title: str, max_length: int = 120) -> str:
     if not cleaned:
         return ""
 
+    pipe_parts = [part.strip() for part in cleaned.split("|") if part.strip()]
+    if len(pipe_parts) > 1 and pipe_parts[-1].lower() == "vite":
+        cleaned = pipe_parts[0]
+
     seen_words: set[str] = set()
     words: list[str] = []
     for part in re.split(r"\s+", cleaned):
@@ -96,4 +100,3 @@ def sentence_score(query: str, sentence: str) -> float:
     query_ratio = overlap / len(query_tokens)
     sentence_ratio = overlap / len(sentence_tokens)
     return (0.7 * query_ratio) + (0.3 * sentence_ratio)
-

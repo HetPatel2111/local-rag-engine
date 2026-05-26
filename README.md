@@ -1,91 +1,67 @@
-# Vite Docs RAG Engine
-A local Retrieval-Augmented Generation pipeline that ingests the Vite documentation, builds a persistent Chroma index, and returns confidence-gated answers from retrieved chunks.
+# semantic-docs-rag
+Production-inspired Retrieval-Augmented Generation system for website ingestion, semantic search, and confidence-aware retrieval using Python, Hugging Face embeddings, and ChromaDB.
 
 ## Overview
-This project solves a practical documentation question-answering problem: how to turn a large public website into a searchable, local RAG system without relying on a hosted vector database or an external application server.
+This project turns the Vite documentation website into a searchable local knowledge system. It downloads sitemap URLs, converts meaningful HTML into Markdown, chunks by document structure, embeds the chunks, stores them in a persistent local Chroma database, and answers queries with confidence filtering and out-of-domain rejection.
 
-The pipeline ingests `sitemap.xml`, downloads pages, cleans HTML, chunks content, generates Hugging Face embeddings, stores vectors in local Chroma, and exposes a CLI that answers queries with confidence thresholding and out-of-domain rejection.
+The main goal is to keep retrieval clean, deterministic, and easy to debug while avoiding the noise introduced by raw HTML and fixed-size chunking.
 
 ## Features
-- [x] Website ingestion from `sitemap.xml`
-- [x] HTML fetching and content cleaning
-- [x] Recursive chunking with overlap
+- [x] Sitemap-driven website ingestion
+- [x] HTML to Markdown knowledge-base generation
+- [x] Structural chunking from Markdown headings
 - [x] Hugging Face embeddings with `BAAI/bge-small-en-v1.5`
-- [x] Persistent local Chroma database
-- [x] Semantic retrieval with score sorting
-- [x] Confidence threshold filtering
-- [x] Out-of-domain rejection
-- [x] Multi-chunk answer synthesis
-- [x] CLI interaction
+- [x] Persistent local Chroma storage
+- [x] Confidence-aware retrieval
+- [x] Out-of-domain refusal behavior
+- [x] Multi-sentence answer synthesis
+- [x] Interactive CLI
+- [x] Evaluation report generation
 
 ## Architecture
 ```text
-                    +----------------------+
-                    |   Vite sitemap.xml   |
-                    +----------+-----------+
-                               |
-                               v
-                    +----------------------+
-                    |   Ingestion layer    |
-                    | sitemap -> URLs      |
-                    +----------+-----------+
-                               |
-                               v
-                    +----------------------+
-                    |   HTML cleaning      |
-                    | remove noise/tags    |
-                    +----------+-----------+
-                               |
-                               v
-                    +----------------------+
-                    |   Chunking layer     |
-                    | 600 chars / overlap  |
-                    +----------+-----------+
-                               |
-                               v
-                    +----------------------+
-                    |   Embeddings layer   |
-                    | BAAI/bge-small-en-v1.5
-                    +----------+-----------+
-                               |
-                               v
-                    +----------------------+
-                    |   Local Chroma DB    |
-                    |   ./chroma_db        |
-                    +----------+-----------+
-                               |
-                               v
-                    +----------------------+
-                    | Retrieval + gating   |
-                    | threshold + synthesis|
-                    +----------+-----------+
-                               |
-                               v
-                    +----------------------+
-                    |        CLI           |
-                    +----------------------+
+Website
+  ↓
+Sitemap Extraction
+  ↓
+Fetch HTML
+  ↓
+Convert HTML → Markdown
+  ↓
+Store Markdown Knowledge Base
+  ↓
+Structural Chunking
+  ↓
+Embeddings
+  ↓
+Local ChromaDB
+  ↓
+Retrieval
+  ↓
+Confidence Filtering
 ```
 
 ## Tech Stack
 | Layer | Tooling | Purpose |
 |---|---|---|
-| Language | Python | End-to-end pipeline and CLI |
-| HTML parsing | BeautifulSoup | Clean extraction from HTML pages |
-| Embeddings | HuggingFaceEmbeddings | Semantic vector generation |
-| Vector store | ChromaDB | Persistent local retrieval index |
-| Orchestration | LangChain | Embedding integration and supporting utilities |
+| Language | Python | Pipeline, retrieval, and CLI |
+| HTML parsing | BeautifulSoup | Clean extraction of meaningful content |
+| Embeddings | HuggingFaceEmbeddings | Dense semantic vectors |
+| Vector store | ChromaDB | Local persistent retrieval index |
 | HTTP | requests | Sitemap and page downloads |
-| Testing | pytest | Smoke checks and unit tests |
+| Testing | unittest | Lightweight validation without extra setup |
+| Evaluation | Markdown report | Query-level smoke evaluation |
 
 ## Retrieval Pipeline
-`sitemap -> clean -> chunk -> embedding -> Chroma -> retrieval`
+`sitemap -> HTML fetch -> Markdown KB -> structural chunking -> embedding -> Chroma -> retrieval -> confidence filtering`
 
-1. The sitemap is downloaded and parsed into canonical URLs.
-2. Pages are fetched and cleaned to remove navigation, headers, scripts, and other page chrome.
-3. Clean documents are chunked with overlap so semantically related text stays together.
-4. Chunks are embedded with `BAAI/bge-small-en-v1.5`.
-5. Chroma stores the vectors locally in `./chroma_db`.
-6. Queries are embedded, matched against the index, confidence-gated, and synthesized into a concise answer.
+1. The sitemap is fetched and deduplicated.
+2. Each page is downloaded and cleaned.
+3. Clean content is converted to Markdown and stored under `knowledge_base/`.
+4. Markdown is chunked by heading structure instead of fixed character windows.
+5. Chunks are embedded with `BAAI/bge-small-en-v1.5`.
+6. Embeddings are persisted in local Chroma at `./chroma_db`.
+7. Retrieval returns the strongest chunks, filters weak matches, and synthesizes a concise answer.
 
 ## Installation
 ```powershell
@@ -97,19 +73,20 @@ pip install -r requirements.txt
 Recommended Python version: `3.11` or `3.12`.
 
 ## Quick Start
-1. Ingest and build the index:
+1. Build the corpus and index:
 ```powershell
-python step1.py
-python step2.py
-python step3.py
-python step4.py
-python step5.py
+python build.py
 ```
 2. Start the CLI:
 ```powershell
 python main.py
 ```
-3. Ask questions interactively.
+3. Ask a question in the prompt.
+
+To generate the evaluation report:
+```powershell
+python evaluate.py
+```
 
 ## Example Queries
 - `What is Vite?`
@@ -117,7 +94,6 @@ python main.py
 - `What is the capital of France?`
 
 ## Example Outputs
-Representative CLI output:
 ```text
 ==================================================
 QUERY
@@ -125,29 +101,27 @@ What is Vite?
 ==================================================
 
 ANSWER
-Vite is a modern frontend build tool. It starts fast and serves source files over native ES modules. It also provides
-Hot Module Replacement for rapid local development.
+Vite is a build tool designed to provide a faster and leaner development experience for modern web projects.
 
 CONFIDENCE
-0.8123
+0.8200
 
 SOURCES
-https://vite.dev/
 https://vite.dev/guide/
 ==================================================
 ```
 
-For an out-of-domain query:
 ```text
 ANSWER
-I don't know based on the indexed documents.
+I don't know based on indexed documents.
 ```
 
 ## Confidence Threshold Logic
-- The retriever ranks the top `5` chunks.
-- If the best score is below `MIN_CONFIDENCE = 0.70`, the system refuses to answer.
-- If the query is in-domain, the answer is synthesized from the strongest chunks only.
-- The output remains conservative so the system does not invent answers for unrelated queries.
+- Retrieve the top `5` chunks.
+- Keep chunks with score at least `90%` of the best score.
+- Reject the response when the best score is below `0.70`.
+- If the query is out of domain or the retrieved content is too weak, return:
+  - `I don't know based on indexed documents.`
 
 ## Folder Structure
 ```text
@@ -159,6 +133,7 @@ repo/
 │   ├── retrieval/
 │   ├── evaluation/
 │   └── utils/
+├── knowledge_base/
 ├── data/
 ├── tests/
 ├── docs/
@@ -171,44 +146,56 @@ repo/
 ```
 
 ## Evaluation Results
-Smoke-test checks on the indexed Vite corpus:
-- `What is HMR in Vite?` returned a confident in-domain answer with matching sources.
-- `What is Vite?` returned a confident in-domain answer.
-- `What is the capital of France?` returned `I don't know based on the indexed documents.`
+Generated from `docs/evaluation_report.md`:
+- top1 relevance: `0.7665`
+- false positives: `0`
+- avg confidence: `0.6901`
+- avg latency: `115.97 ms`
 
 ## Design Decisions
-- Chroma was chosen because it is simple, local-first, and persistent without requiring external infrastructure.
-- Hugging Face embeddings were chosen to keep the system fully reproducible and easy to run locally.
-- Confidence gating was added to reduce false positives for unrelated questions.
-- Chunk overlap was kept to preserve context across adjacent sections.
-- Sentence-level synthesis was preferred over raw chunk concatenation to keep answers concise and readable.
+- Markdown is stored as an intermediate knowledge base to remove HTML noise before chunking.
+- Structural chunking follows heading hierarchy to keep sections stable and debuggable.
+- Chroma was selected because it is simple, local, and persistent.
+- Confidence thresholds reduce false positives and keep out-of-domain queries from producing fabricated answers.
+- Sentence-based synthesis keeps answers concise without requiring an LLM.
 
 ## Limitations
-- The system does not generate novel answers with an LLM yet.
-- Retrieval quality depends on the quality of the source documentation and chunking strategy.
-- The current answer synthesis is extractive rather than generative.
-- Running the embedding model can still be slow on CPU-only machines.
+- The system is extractive, not generative, so it does not yet write new prose with an LLM.
+- Retrieval quality depends on the source document structure and cleaning rules.
+- CPU-only embedding can still be slow on some machines.
+- The current answer synthesis is heuristic and not a trained reranker.
 
 ## Future Improvements
-- Add LLM generation for richer final answers.
-- Add reranking for more precise document selection.
-- Add hybrid search to combine dense and keyword retrieval.
-- Add deployment options for a web API or lightweight UI.
+- Add LLM generation for final answers.
+- Add cross-encoder reranking.
+- Add hybrid keyword + semantic search.
+- Add a lightweight web API or UI.
+- Add deployment support for cloud or local serving.
 
 ## Key Learnings
-- Good RAG systems depend more on retrieval quality than on answer formatting.
-- Clean text extraction matters as much as embedding choice.
-- Confidence thresholds are necessary to prevent hallucinated answers.
-- Local persistence makes the pipeline easy to iterate on and demo.
+- RAG quality improves more from document hygiene than from prompt tricks.
+- Structural chunking is easier to debug than fixed-size windows.
+- Confidence gating is essential for honest refusal behavior.
+- A clean intermediate Markdown corpus makes the system much easier to maintain.
 
 ## License
 This project is licensed under the MIT License. See [LICENSE](LICENSE).
 
-## GitHub Publishing Notes
+## GitHub Polish
+- Suggested repository name: `semantic-docs-rag`
+- Suggested description: `Production-inspired Retrieval-Augmented Generation (RAG) system for website ingestion, semantic search, and confidence-aware retrieval using Python, Hugging Face embeddings, and ChromaDB.`
+- Suggested topics: `python`, `rag`, `chromadb`, `huggingface`, `beautifulsoup`, `semantic-search`, `retrieval-augmented-generation`, `vite`, `nlp`
+- Suggested commit messages:
+  - `feat: add markdown knowledge base pipeline`
+  - `feat: introduce structural chunking`
+  - `feat: add confidence-aware retrieval`
+  - `docs: rewrite repository for publication`
+  - `test: add smoke tests for synthesis`
 - First release notes:
   - `v1.0.0`
-  - Local Vite documentation ingestion
-  - Persistent Chroma index
-  - Confidence-gated retrieval
-  - Extractive multi-chunk answer synthesis
+  - Markdown knowledge base
+  - Structural chunking
+  - Persistent Chroma retrieval
+  - Confidence-aware refusal behavior
   - Interactive CLI
+

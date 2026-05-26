@@ -67,6 +67,32 @@ class AnsweringTests(unittest.TestCase):
         self.assertIn("SOURCES", output)
         self.assertIn("https://vite.dev/", output)
 
+    def test_definition_queries_return_first_fact_paragraph(self) -> None:
+        results = [
+            RetrievalResult(
+                score=0.95,
+                url="https://vite.dev/guide/",
+                title="Guide",
+                chunk_id="001_0001",
+                text="Vite is a modern frontend build tool.\n\nIt provides a fast dev server and HMR.",
+            )
+        ]
+        answer = synthesize_answer("What is Vite?", results)
+        self.assertEqual(answer, "Vite is a modern frontend build tool.")
+
+    def test_rejected_sentences_are_filtered(self) -> None:
+        results = [
+            RetrievalResult(
+                score=0.95,
+                url="https://vite.dev/blog/announcing-vite3",
+                title="Blog",
+                chunk_id="001_0001",
+                text='ViteConf was great. "Check out the replay" is not a factual answer.',
+            )
+        ]
+        answer = synthesize_answer("Explain Vite", results)
+        self.assertEqual(answer, "I don't know based on the indexed documents.")
+
 
 if __name__ == "__main__":
     unittest.main()
