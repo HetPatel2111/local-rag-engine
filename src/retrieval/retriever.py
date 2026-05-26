@@ -35,7 +35,11 @@ class ChromaRetriever:
         model_name: str = DEFAULT_MODEL_NAME,
     ) -> None:
         load_dotenv()
-        self.persist_dir = Path(persist_dir)
+        candidate_dir = Path(persist_dir)
+        if not candidate_dir.is_absolute():
+            repo_root = Path(__file__).resolve().parents[2]
+            candidate_dir = repo_root / candidate_dir
+        self.persist_dir = candidate_dir
         self.collection_name = collection_name
         self.model_name = model_name
 

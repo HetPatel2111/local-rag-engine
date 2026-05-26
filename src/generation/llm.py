@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 
 MODEL_NAME = "gemini-2.5-flash"
 DEFAULT_TIMEOUT_MS = 30_000
-DEFAULT_MAX_OUTPUT_TOKENS = 300
+DEFAULT_MAX_OUTPUT_TOKENS = 512
 DEFAULT_RETRY_ATTEMPTS = 3
 DEFAULT_RETRY_DELAY_SEC = 2.0
 REFUSAL_MESSAGE = "I don't know based on the indexed documents."
@@ -222,30 +222,33 @@ def generate_answer(query: str, retrieved_context: str) -> GenerationResult:
     for attempt in range(1, DEFAULT_RETRY_ATTEMPTS + 1):
         try:
             result = _generate_once(query, retrieved_context)
-            needs_retry = (
-                len(result.answer.strip()) < 80
-                or result.finish_reason.upper() == "MAX_TOKENS"
-                or not _is_complete_answer(result.answer)
-            )
-            if needs_retry and attempt < DEFAULT_RETRY_ATTEMPTS:
+
+            def is_max_tokens(reason: str) -> bool:
+                upper = (reason or "").upper()
+                return "MAX_TOKENS" in upper or "TOKEN" in upper and "MAX" in upper
+
+            budgets = [DEFAULT_MAX_OUTPUT_TOKENS, 800, 1200]
+            budget_index = 0
+            while True:
+                needs_more = (
+                    len(result.answer.strip()) < 80
+                    or is_max_tokens(result.finish_reason)
+                    or not _is_complete_answer(result.answer)
+                )
+                if not needs_more:
+                    break
+
+                budget_index += 1
+                if budget_index >= len(budgets):
+                    break
+
                 logger.warning(
-                    "Gemini response looks incomplete; retrying once more answer_length=%s finish_reason=%s",
+                    "Gemini response looks incomplete; retrying with larger budget answer_length=%s finish_reason=%s next_budget=%s",
                     len(result.answer.strip()),
                     result.finish_reason or "UNKNOWN",
+                    budgets[budget_index],
                 )
-                result = _generate_with_tokens(query, retrieved_context, 600)
-                if not result.answer.strip():
-                    result = GenerationResult(
-                        answer="",
-                        model=MODEL_NAME,
-                        attempts=1,
-                        latency_ms=result.latency_ms,
-                        token_count=result.token_count,
-                        input_tokens=result.input_tokens,
-                        output_tokens=result.output_tokens,
-                        finish_reason=result.finish_reason,
-                        response_length=0,
-                    )
+                result = _generate_with_tokens(query, retrieved_context, budgets[budget_index])
 
             return GenerationResult(
                 answer=result.answer,

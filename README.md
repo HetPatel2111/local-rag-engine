@@ -91,6 +91,19 @@ python main.py
 ```
 3. Ask a question in the prompt.
 
+## Web API + Frontend UI
+Start the FastAPI server (port `8000`):
+```powershell
+python backend\main.py
+```
+Then start the React UI (port `5173`):
+```powershell
+cd frontend
+npm install
+npm run dev
+```
+The UI calls `POST /ask` on `http://localhost:8000` by default. To override, set `VITE_API_BASE_URL` in `frontend/.env.local`.
+
 To generate the RAG evaluation report:
 ```powershell
 python evaluate.py
@@ -136,6 +149,8 @@ I don't know based on the indexed documents.
 ## Folder Structure
 ```text
 repo/
+├── backend/                 # FastAPI server (`POST /ask`)
+├── frontend/                # React + Vite UI
 ├── src/
 │   ├── ingestion/
 │   ├── processing/
@@ -145,6 +160,7 @@ repo/
 │   ├── evaluation/
 │   └── utils/
 ├── knowledge_base/
+├── chroma_db/
 ├── data/
 ├── tests/
 ├── docs/
@@ -180,7 +196,6 @@ The report captures:
 ## Future Improvements
 - Add cross-encoder reranking.
 - Add hybrid keyword + semantic search.
-- Add a lightweight web API or UI.
 - Add deployment support for cloud or local serving.
 - Add stronger answer evaluation with human review.
 
