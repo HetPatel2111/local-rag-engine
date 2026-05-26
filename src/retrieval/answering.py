@@ -1,50 +1,26 @@
-"""Answer synthesis and output formatting for the CLI."""
+"""RAG answer orchestration and CLI formatting."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-import re
-from statistics import mean
+import logging
 import textwrap
-from typing import Sequence
+from time import perf_counter
 
+from src.generation.context_builder import BuiltContext, build_context
+from src.generation.llm import MODEL_NAME, REFUSAL_MESSAGE, GenerationResult, generate_answer
 from src.retrieval.retriever import ChromaRetriever, RetrievalResult
-from src.utils.text import normalize_whitespace, sentence_score, split_sentences
+
+logger = logging.getLogger(__name__)
 
 TOP_K = 5
 MIN_CONFIDENCE = 0.70
 KEEP_RATIO = 0.90
-MIN_SENTENCE_LEN = 40
-MAX_SENTENCE_LEN = 300
-MAX_ANSWER_CHARS = 700
-PREFERRED_TERMS = ("is", "provides", "allows", "supports", "uses")
-BOOSTED_PATHS = ("guide/", "config/")
-PENALIZED_PATHS = ("blog/", "homepage/")
-REJECT_PHRASES = (
-    "i feel",
-    "every time",
-    "check out",
-    "viteconf",
-    "view replay",
-    "view the replays",
-    "is gonna",
-    "i think",
-    "in my opinion",
-    "we think",
-    "highly recommend",
-    "works great",
-    "testimonial",
-    "testimonials",
-    "announcement",
-    "announcements",
-)
-QUOTE_RE = re.compile(r'[\"“”]')
-DEFINITION_PREFIXES = ("what is", "explain", "define")
 
 
 @dataclass(frozen=True)
 class AnswerResult:
-    """Structured answer payload returned by the retrieval pipeline."""
+    """Structured output returned by the phase-2 RAG pipeline."""
 
     answer: str
     confidence: float
@@ -52,6 +28,15 @@ class AnswerResult:
     sources: list[str]
     title: str = ""
     url: str = ""
+    model: str = MODEL_NAME
+    latency_ms: float = 0.0
+    token_count: int = 0
+    input_tokens: int = 0
+    output_tokens: int = 0
+    finish_reason: str = ""
+    response_length: int = 0
+    retrieved_count: int = 0
+    context_chars: int = 0
 
 
 def search(retriever: ChromaRetriever, query: str, k: int = TOP_K) -> list[RetrievalResult]:
@@ -59,169 +44,101 @@ def search(retriever: ChromaRetriever, query: str, k: int = TOP_K) -> list[Retri
     return retriever.retrieve(query=query, k=k)
 
 
-def _unique_urls(results: Sequence[RetrievalResult]) -> list[str]:
-    urls: list[str] = []
-    seen: set[str] = set()
-    for result in results:
-        if result.url and result.url not in seen:
-            seen.add(result.url)
-            urls.append(result.url)
-    return urls
-
-
-def _best_chunk_filter(results: Sequence[RetrievalResult]) -> list[RetrievalResult]:
+def _best_chunk_filter(results: list[RetrievalResult]) -> list[RetrievalResult]:
+    """Keep only chunks within 90% of the best score."""
     if not results:
         return []
+
     best_score = results[0].score
     threshold = best_score * KEEP_RATIO
     return [result for result in results if result.score >= threshold]
 
 
-def _is_definition_query(query: str) -> bool:
-    normalized = normalize_whitespace(query).lower()
-    return normalized.startswith(DEFINITION_PREFIXES)
-
-
-def _reject_sentence(sentence: str) -> bool:
-    lowered = sentence.lower()
-    if QUOTE_RE.search(sentence):
-        return True
-    return any(phrase in lowered for phrase in REJECT_PHRASES)
-
-
-def _chunk_path_bonus(url: str) -> float:
-    lowered = url.lower()
-    bonus = 0.0
-    if any(path in lowered for path in BOOSTED_PATHS):
-        bonus += 0.12
-    if any(path in lowered for path in PENALIZED_PATHS):
-        bonus -= 0.10
-    return bonus
-
-
-def _sentence_term_bonus(sentence: str) -> float:
-    lowered = sentence.lower()
-    bonus = 0.0
-    if any(re.search(rf"\b{re.escape(term)}\b", lowered) for term in PREFERRED_TERMS):
-        bonus += 0.08
-    return bonus
-
-
-def _factual_paragraphs(text: str, min_length: int = 1) -> list[str]:
-    paragraphs = [normalize_whitespace(part) for part in re.split(r"\n\s*\n+", text or "") if normalize_whitespace(part)]
-    return [paragraph for paragraph in paragraphs if len(paragraph) >= min_length]
-
-
-def _select_definition_paragraph(query: str, results: Sequence[RetrievalResult]) -> str:
-    ranked = sorted(
-        results,
-        key=lambda result: result.score + _chunk_path_bonus(result.url),
-        reverse=True,
-    )
-    for chunk in ranked:
-        for paragraph in _factual_paragraphs(chunk.text):
-            if _reject_sentence(paragraph):
-                continue
-            if _sentence_term_bonus(paragraph) > 0.0 or sentence_score(query, paragraph) > 0.0:
-                return paragraph
-    return "I don't know based on the indexed documents."
-
-
-def synthesize_answer(query: str, results: Sequence[RetrievalResult]) -> str:
-    """Create a concise answer from the strongest chunks."""
-    kept_chunks = _best_chunk_filter(results)
-    if not kept_chunks:
-        return "I don't know based on the indexed documents."
-
-    if _is_definition_query(query):
-        return _select_definition_paragraph(query, kept_chunks)
-
-    scored_sentences: list[tuple[float, int, str]] = []
-    order_index = 0
-    seen_sentences: set[str] = set()
-
-    ranked_chunks = sorted(
-        kept_chunks,
-        key=lambda result: result.score + _chunk_path_bonus(result.url),
-        reverse=True,
-    )
-
-    for chunk in ranked_chunks:
-        for sentence in split_sentences(chunk.text):
-            cleaned = normalize_whitespace(sentence)
-            if len(cleaned) < MIN_SENTENCE_LEN or len(cleaned) > MAX_SENTENCE_LEN:
-                continue
-            if _reject_sentence(cleaned):
-                continue
-            normalized = cleaned.lower()
-            if normalized in seen_sentences:
-                continue
-            seen_sentences.add(normalized)
-            score = sentence_score(query, cleaned) + _sentence_term_bonus(cleaned) + _chunk_path_bonus(chunk.url)
-            scored_sentences.append((score, order_index, cleaned))
-            order_index += 1
-
-    if not scored_sentences:
-        return "I don't know based on the indexed documents."
-
-    scored_sentences.sort(key=lambda item: item[0], reverse=True)
-    top_sentences = sorted(scored_sentences[:3], key=lambda item: item[1])
-
-    answer_parts: list[str] = []
-    current_length = 0
-    for _, _, sentence in top_sentences:
-        next_length = current_length + len(sentence) + (1 if answer_parts else 0)
-        if next_length > MAX_ANSWER_CHARS:
-            if not answer_parts and sentence:
-                return sentence
-            break
-        answer_parts.append(sentence)
-        current_length = next_length
-
-    if not answer_parts:
-        return "I don't know based on the indexed documents."
-    return " ".join(answer_parts).strip()
+def _build_rag_context(results: list[RetrievalResult]) -> BuiltContext:
+    """Construct a compact prompt context from the strongest chunks."""
+    return build_context(_best_chunk_filter(results))
 
 
 def answer_query(retriever: ChromaRetriever, query: str) -> AnswerResult:
-    """Return a single answer decision with confidence and sources."""
+    """Retrieve, filter, build context, and optionally call Gemini."""
     results = search(retriever, query=query, k=TOP_K)
     if not results:
         return AnswerResult(
-            answer="I don't know based on the indexed documents.",
+            answer=REFUSAL_MESSAGE,
             confidence=0.0,
             found=False,
             sources=[],
+            model=MODEL_NAME,
         )
 
     best_score = results[0].score
-    average_score = mean(result.score for result in results)
-
     if best_score < MIN_CONFIDENCE:
         return AnswerResult(
-            answer="I don't know based on the indexed documents.",
-            confidence=average_score,
+            answer=REFUSAL_MESSAGE,
+            confidence=best_score,
             found=False,
             sources=[],
+            title=results[0].title,
+            url=results[0].url,
+            model=MODEL_NAME,
+            retrieved_count=len(results),
         )
 
-    answer = synthesize_answer(query, results)
-    if answer == "I don't know based on the indexed documents.":
+    context = _build_rag_context(results)
+    if not context.text.strip():
         return AnswerResult(
-            answer=answer,
-            confidence=average_score,
+            answer=REFUSAL_MESSAGE,
+            confidence=best_score,
             found=False,
             sources=[],
+            title=results[0].title,
+            url=results[0].url,
+            model=MODEL_NAME,
+            retrieved_count=len(results),
         )
 
-    sources = _unique_urls(results)
+    logger.info(
+        "query=%s retrieved_docs=%s confidence=%.4f context_chars=%s",
+        query,
+        len(results),
+        best_score,
+        context.char_count,
+    )
+
+    started = perf_counter()
+    generation: GenerationResult = generate_answer(query, context.text)
+    latency_ms = (perf_counter() - started) * 1000.0
+    answer = generation.answer.strip()
+    found = bool(answer)
+    sources = context.sources if found else []
+
+    logger.info(
+        "query=%s input_tokens=%s output_tokens=%s finish_reason=%s latency_ms=%.2f response_length=%s found=%s",
+        query,
+        generation.input_tokens,
+        generation.output_tokens,
+        generation.finish_reason or "UNKNOWN",
+        latency_ms,
+        len(answer),
+        found,
+    )
+
     return AnswerResult(
         answer=answer,
-        confidence=average_score,
-        found=True,
+        confidence=best_score,
+        found=found,
         sources=sources,
         title=results[0].title,
         url=results[0].url,
+        model=generation.model,
+        latency_ms=latency_ms,
+        token_count=generation.token_count,
+        input_tokens=generation.input_tokens,
+        output_tokens=generation.output_tokens,
+        finish_reason=generation.finish_reason,
+        response_length=len(answer),
+        retrieved_count=len(results),
+        context_chars=context.char_count,
     )
 
 
@@ -232,12 +149,11 @@ def retrieve(query: str, retriever: ChromaRetriever | None = None) -> AnswerResu
 
 
 def format_answer(query: str, result: AnswerResult) -> str:
-    """Format one result block for CLI output."""
+    """Format the single-answer CLI output."""
     lines: list[str] = []
     lines.append("=" * 50)
     lines.append("QUERY")
     lines.append(query)
-    lines.append("=" * 50)
     lines.append("")
     lines.append("ANSWER")
     lines.extend(textwrap.wrap(result.answer, width=88, break_long_words=False, break_on_hyphens=False) or [""])
@@ -250,5 +166,14 @@ def format_answer(query: str, result: AnswerResult) -> str:
         lines.extend(result.sources)
     else:
         lines.append("")
+    lines.append("")
+    lines.append("MODEL")
+    lines.append(result.model or MODEL_NAME)
+    lines.append("")
+    lines.append("FINISH REASON")
+    lines.append(result.finish_reason or "UNKNOWN")
+    lines.append("")
+    lines.append("CHAR COUNT")
+    lines.append(str(result.response_length))
     lines.append("=" * 50)
     return "\n".join(lines).rstrip()

@@ -2,14 +2,13 @@
 
 from __future__ import annotations
 
-import os
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
 
 import chromadb
 
 from src.embeddings.huggingface import DEFAULT_MODEL_NAME, create_embedder
+from src.utils.env import load_dotenv
 from src.utils.text import clean_title
 
 
@@ -35,7 +34,7 @@ class ChromaRetriever:
         collection_name: str = "vite_docs",
         model_name: str = DEFAULT_MODEL_NAME,
     ) -> None:
-        self._load_dotenv()
+        load_dotenv()
         self.persist_dir = Path(persist_dir)
         self.collection_name = collection_name
         self.model_name = model_name
@@ -46,23 +45,6 @@ class ChromaRetriever:
         self.client = chromadb.PersistentClient(path=str(self.persist_dir))
         self.collection = self.client.get_collection(name=self.collection_name)
         self.embedder = create_embedder(model_name=self.model_name)
-
-    @staticmethod
-    def _load_dotenv() -> None:
-        """Load `.env` without introducing an extra dependency."""
-        env_path = Path(".env")
-        if not env_path.exists():
-            return
-
-        for line in env_path.read_text(encoding="utf-8").splitlines():
-            stripped = line.strip()
-            if not stripped or stripped.startswith("#") or "=" not in stripped:
-                continue
-            key, value = stripped.split("=", 1)
-            key = key.strip()
-            value = value.strip().strip('"').strip("'")
-            if key and key not in os.environ:
-                os.environ[key] = value
 
     def retrieve(self, query: str, k: int = 5, fetch_k: int = 20) -> list[RetrievalResult]:
         """Return the top `k` documents sorted by query similarity."""

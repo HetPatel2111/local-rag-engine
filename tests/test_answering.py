@@ -1,10 +1,13 @@
-"""Tests for answer synthesis and confidence gating."""
+"""Tests for Gemini-backed answer generation and confidence gating."""
 
 from __future__ import annotations
 
 import unittest
+from unittest.mock import patch
 
-from src.retrieval.answering import AnswerResult, answer_query, format_answer, synthesize_answer
+from src.generation.context_builder import build_context
+from src.generation.llm import GenerationResult, MODEL_NAME, REFUSAL_MESSAGE
+from src.retrieval.answering import AnswerResult, answer_query, format_answer
 from src.retrieval.retriever import RetrievalResult
 
 
@@ -31,27 +34,64 @@ class AnsweringTests(unittest.TestCase):
         )
         result = answer_query(retriever, "What is Vite?")
         self.assertFalse(result.found)
-        self.assertIn("I don't know", result.answer)
+        self.assertEqual(result.answer, REFUSAL_MESSAGE)
 
-    def test_synthesize_answer_uses_strong_chunks(self) -> None:
+    def test_answer_query_uses_generation_for_confident_results(self) -> None:
+        retriever = DummyRetriever(
+            [
+                RetrievalResult(
+                    score=0.95,
+                    url="https://vite.dev/guide/",
+                    title="Guide",
+                    chunk_id="001_0001",
+                    text="Vite is a build tool designed to provide a faster and leaner development experience.",
+                ),
+                RetrievalResult(
+                    score=0.91,
+                    url="https://vite.dev/guide/hmr",
+                    title="HMR",
+                    chunk_id="001_0002",
+                    text="HMR allows fast updates without a full page reload.",
+                ),
+            ]
+        )
+        mocked_generation = GenerationResult(
+            answer="Vite is a build tool designed to provide a faster and leaner development experience.",
+            model=MODEL_NAME,
+            attempts=1,
+            latency_ms=12.3,
+            token_count=42,
+            response_length=84,
+        )
+        with patch("src.retrieval.answering.generate_answer", return_value=mocked_generation):
+            result = answer_query(retriever, "What is Vite?")
+
+        self.assertTrue(result.found)
+        self.assertEqual(result.model, MODEL_NAME)
+        self.assertIn("https://vite.dev/guide/", result.sources)
+        self.assertEqual(result.answer, mocked_generation.answer)
+
+    def test_build_context_deduplicates_chunks(self) -> None:
         results = [
             RetrievalResult(
                 score=0.95,
                 url="https://vite.dev/a",
                 title="A",
                 chunk_id="001_0001",
-                text="Vite uses native ES modules to start quickly in the browser. HMR updates changed modules without a full reload.",
+                text="Vite uses native ES modules to start quickly in the browser.",
             ),
             RetrievalResult(
                 score=0.91,
-                url="https://vite.dev/b",
-                title="B",
-                chunk_id="001_0002",
-                text="It also provides fast startup and a development server.",
+                url="https://vite.dev/a",
+                title="A",
+                chunk_id="001_0001",
+                text="Vite uses native ES modules to start quickly in the browser.",
             ),
         ]
-        answer = synthesize_answer("What is Vite?", results)
-        self.assertIn("Vite uses native ES modules to start quickly in the browser.", answer)
+        context = build_context(results)
+        self.assertEqual(context.chunk_count, 1)
+        self.assertIn("Title: A", context.text)
+        self.assertEqual(context.sources, ["https://vite.dev/a"])
 
     def test_format_answer_includes_sources(self) -> None:
         result = AnswerResult(
@@ -61,37 +101,14 @@ class AnsweringTests(unittest.TestCase):
             sources=["https://vite.dev/"],
             title="Vite",
             url="https://vite.dev/",
+            model=MODEL_NAME,
         )
         output = format_answer("What is Vite?", result)
         self.assertIn("ANSWER", output)
         self.assertIn("SOURCES", output)
         self.assertIn("https://vite.dev/", output)
-
-    def test_definition_queries_return_first_fact_paragraph(self) -> None:
-        results = [
-            RetrievalResult(
-                score=0.95,
-                url="https://vite.dev/guide/",
-                title="Guide",
-                chunk_id="001_0001",
-                text="Vite is a modern frontend build tool.\n\nIt provides a fast dev server and HMR.",
-            )
-        ]
-        answer = synthesize_answer("What is Vite?", results)
-        self.assertEqual(answer, "Vite is a modern frontend build tool.")
-
-    def test_rejected_sentences_are_filtered(self) -> None:
-        results = [
-            RetrievalResult(
-                score=0.95,
-                url="https://vite.dev/blog/announcing-vite3",
-                title="Blog",
-                chunk_id="001_0001",
-                text='ViteConf was great. "Check out the replay" is not a factual answer.',
-            )
-        ]
-        answer = synthesize_answer("Explain Vite", results)
-        self.assertEqual(answer, "I don't know based on the indexed documents.")
+        self.assertIn("MODEL", output)
+        self.assertIn(MODEL_NAME, output)
 
 
 if __name__ == "__main__":

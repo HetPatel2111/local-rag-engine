@@ -2,16 +2,16 @@
 
 from __future__ import annotations
 
-import logging
 import sys
 
 from src.retrieval.answering import answer_query, format_answer
 from src.retrieval.retriever import ChromaRetriever
+from src.utils.app_logging import configure_logging
 
 
 def main() -> None:
     """Run a query-driven CLI against the local Chroma database."""
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+    configure_logging()
     retriever = ChromaRetriever()
 
     initial_query = " ".join(sys.argv[1:]).strip()

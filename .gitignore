@@ -6,5 +6,6 @@ chroma_db/
 data/html/
 data/chunks/
 *.log
+logs/
 .pytest_cache/
 *.pyc

@@ -1,67 +1,69 @@
 # semantic-docs-rag
-Production-inspired Retrieval-Augmented Generation system for website ingestion, semantic search, and confidence-aware retrieval using Python, Hugging Face embeddings, and ChromaDB.
+Production-style Retrieval-Augmented Generation for website ingestion, semantic search, and grounded Gemini 2.5 Flash answers using Python, Hugging Face embeddings, ChromaDB, and Google AI Studio.
 
 ## Overview
-This project turns the Vite documentation website into a searchable local knowledge system. It downloads sitemap URLs, converts meaningful HTML into Markdown, chunks by document structure, embeds the chunks, stores them in a persistent local Chroma database, and answers queries with confidence filtering and out-of-domain rejection.
+This project turns the Vite documentation site into a local knowledge system. It downloads sitemap URLs, cleans HTML, converts pages into Markdown, chunks by document structure, embeds the chunks, stores them in a persistent Chroma database, and answers questions with confidence gating plus Gemini generation.
 
-The main goal is to keep retrieval clean, deterministic, and easy to debug while avoiding the noise introduced by raw HTML and fixed-size chunking.
+The architecture is designed to be easy to debug, easy to explain in interviews, and resilient against noisy HTML, weak matches, and out-of-domain questions.
 
 ## Features
-- [x] Sitemap-driven website ingestion
-- [x] HTML to Markdown knowledge-base generation
-- [x] Structural chunking from Markdown headings
+- [x] Sitemap-driven ingestion
+- [x] HTML to Markdown knowledge base
+- [x] Structural chunking from Markdown hierarchy
 - [x] Hugging Face embeddings with `BAAI/bge-small-en-v1.5`
 - [x] Persistent local Chroma storage
-- [x] Confidence-aware retrieval
+- [x] Confidence-aware retrieval filtering
 - [x] Out-of-domain refusal behavior
-- [x] Multi-sentence answer synthesis
+- [x] Gemini 2.5 Flash answer generation
 - [x] Interactive CLI
-- [x] Evaluation report generation
+- [x] Markdown evaluation reports
 
 ## Architecture
 ```text
 Website
-  ↓
+  ->
 Sitemap Extraction
-  ↓
+  ->
 Fetch HTML
-  ↓
-Convert HTML → Markdown
-  ↓
+  ->
+Convert HTML to Markdown
+  ->
 Store Markdown Knowledge Base
-  ↓
+  ->
 Structural Chunking
-  ↓
+  ->
 Embeddings
-  ↓
+  ->
 Local ChromaDB
-  ↓
+  ->
 Retrieval
-  ↓
+  ->
 Confidence Filtering
+  ->
+Gemini 2.5 Flash
 ```
 
 ## Tech Stack
 | Layer | Tooling | Purpose |
 |---|---|---|
-| Language | Python | Pipeline, retrieval, and CLI |
+| Language | Python | Pipeline, retrieval, generation, CLI |
 | HTML parsing | BeautifulSoup | Clean extraction of meaningful content |
 | Embeddings | HuggingFaceEmbeddings | Dense semantic vectors |
 | Vector store | ChromaDB | Local persistent retrieval index |
+| Generation | Google AI Studio / Gemini 2.5 Flash | Grounded answer synthesis |
 | HTTP | requests | Sitemap and page downloads |
-| Testing | unittest | Lightweight validation without extra setup |
-| Evaluation | Markdown report | Query-level smoke evaluation |
+| Testing | unittest | Lightweight validation |
 
 ## Retrieval Pipeline
-`sitemap -> HTML fetch -> Markdown KB -> structural chunking -> embedding -> Chroma -> retrieval -> confidence filtering`
+`sitemap -> HTML fetch -> Markdown KB -> structural chunking -> embedding -> Chroma -> retrieval -> confidence filtering -> Gemini`
 
 1. The sitemap is fetched and deduplicated.
 2. Each page is downloaded and cleaned.
 3. Clean content is converted to Markdown and stored under `knowledge_base/`.
-4. Markdown is chunked by heading structure instead of fixed character windows.
+4. Markdown is chunked by heading structure instead of fixed-size windows.
 5. Chunks are embedded with `BAAI/bge-small-en-v1.5`.
 6. Embeddings are persisted in local Chroma at `./chroma_db`.
-7. Retrieval returns the strongest chunks, filters weak matches, and synthesizes a concise answer.
+7. Retrieval keeps the strongest chunks, filters weak matches, builds a compact context, and sends it to Gemini 2.5 Flash.
 
 ## Installation
 ```powershell
@@ -71,6 +73,12 @@ pip install -r requirements.txt
 ```
 
 Recommended Python version: `3.11` or `3.12`.
+
+## Environment
+Create a local `.env` file with:
+```env
+GOOGLE_API_KEY=your_google_ai_studio_api_key
+```
 
 ## Quick Start
 1. Build the corpus and index:
@@ -83,7 +91,7 @@ python main.py
 ```
 3. Ask a question in the prompt.
 
-To generate the evaluation report:
+To generate the RAG evaluation report:
 ```powershell
 python evaluate.py
 ```
@@ -93,12 +101,11 @@ python evaluate.py
 - `How does HMR work?`
 - `What is the capital of France?`
 
-## Example Outputs
+## Example Output
 ```text
 ==================================================
 QUERY
 What is Vite?
-==================================================
 
 ANSWER
 Vite is a build tool designed to provide a faster and leaner development experience for modern web projects.
@@ -108,12 +115,15 @@ CONFIDENCE
 
 SOURCES
 https://vite.dev/guide/
+
+MODEL
+Gemini 2.5 Flash
 ==================================================
 ```
 
 ```text
 ANSWER
-I don't know based on indexed documents.
+I don't know based on the indexed documents.
 ```
 
 ## Confidence Threshold Logic
@@ -121,7 +131,7 @@ I don't know based on indexed documents.
 - Keep chunks with score at least `90%` of the best score.
 - Reject the response when the best score is below `0.70`.
 - If the query is out of domain or the retrieved content is too weak, return:
-  - `I don't know based on indexed documents.`
+  - `I don't know based on the indexed documents.`
 
 ## Folder Structure
 ```text
@@ -131,6 +141,7 @@ repo/
 │   ├── processing/
 │   ├── embeddings/
 │   ├── retrieval/
+│   ├── generation/
 │   ├── evaluation/
 │   └── utils/
 ├── knowledge_base/
@@ -146,31 +157,32 @@ repo/
 ```
 
 ## Evaluation Results
-Generated from `docs/evaluation_report.md`:
-- top1 relevance: `0.7665`
-- false positives: `0`
-- avg confidence: `0.6901`
-- avg latency: `115.97 ms`
+Run `python evaluate.py` to generate `docs/rag_evaluation.md`.
+The report captures:
+- retrieval confidence
+- generation latency
+- answer quality
+- hallucination count
 
 ## Design Decisions
 - Markdown is stored as an intermediate knowledge base to remove HTML noise before chunking.
 - Structural chunking follows heading hierarchy to keep sections stable and debuggable.
-- Chroma was selected because it is simple, local, and persistent.
+- Chroma was selected because it is local, persistent, and simple to inspect.
 - Confidence thresholds reduce false positives and keep out-of-domain queries from producing fabricated answers.
-- Sentence-based synthesis keeps answers concise without requiring an LLM.
+- Gemini is only called after retrieval passes the confidence gate.
 
 ## Limitations
-- The system is extractive, not generative, so it does not yet write new prose with an LLM.
-- Retrieval quality depends on the source document structure and cleaning rules.
+- The system depends on the quality of the source documentation and the cleaning rules.
 - CPU-only embedding can still be slow on some machines.
-- The current answer synthesis is heuristic and not a trained reranker.
+- Gemini output quality depends on retrieved context quality.
+- The current design is grounded and concise, but not fully autonomous or agentic.
 
 ## Future Improvements
-- Add LLM generation for final answers.
 - Add cross-encoder reranking.
 - Add hybrid keyword + semantic search.
 - Add a lightweight web API or UI.
 - Add deployment support for cloud or local serving.
+- Add stronger answer evaluation with human review.
 
 ## Key Learnings
 - RAG quality improves more from document hygiene than from prompt tricks.
@@ -183,12 +195,12 @@ This project is licensed under the MIT License. See [LICENSE](LICENSE).
 
 ## GitHub Polish
 - Suggested repository name: `semantic-docs-rag`
-- Suggested description: `Production-inspired Retrieval-Augmented Generation (RAG) system for website ingestion, semantic search, and confidence-aware retrieval using Python, Hugging Face embeddings, and ChromaDB.`
-- Suggested topics: `python`, `rag`, `chromadb`, `huggingface`, `beautifulsoup`, `semantic-search`, `retrieval-augmented-generation`, `vite`, `nlp`
+- Suggested description: `Production-inspired Retrieval-Augmented Generation (RAG) system for website ingestion, semantic search, and confidence-aware retrieval using Python, Hugging Face embeddings, ChromaDB, and Gemini 2.5 Flash.`
+- Suggested topics: `python`, `rag`, `chromadb`, `huggingface`, `beautifulsoup`, `semantic-search`, `retrieval-augmented-generation`, `gemini`, `vite`, `nlp`
 - Suggested commit messages:
   - `feat: add markdown knowledge base pipeline`
   - `feat: introduce structural chunking`
-  - `feat: add confidence-aware retrieval`
+  - `feat: add Gemini generation`
   - `docs: rewrite repository for publication`
   - `test: add smoke tests for synthesis`
 - First release notes:
@@ -197,5 +209,5 @@ This project is licensed under the MIT License. See [LICENSE](LICENSE).
   - Structural chunking
   - Persistent Chroma retrieval
   - Confidence-aware refusal behavior
+  - Gemini 2.5 Flash generation
   - Interactive CLI
-

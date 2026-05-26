@@ -1,7 +1,7 @@
 # Project Overview
 
 ## Architecture
-The repository is organized around a Markdown knowledge base rather than raw HTML.
+The repository is organized around a Markdown knowledge base and a grounded generation layer.
 
 1. `src/ingestion/sitemap.py` loads and deduplicates sitemap URLs.
 2. `src/processing/html_cleaner.py` removes site chrome and converts HTML to Markdown.
@@ -9,13 +9,15 @@ The repository is organized around a Markdown knowledge base rather than raw HTM
 4. `src/embeddings/huggingface.py` creates normalized embeddings.
 5. `src/pipeline/build.py` writes the Chroma index.
 6. `src/retrieval/retriever.py` loads the persistent collection.
-7. `src/retrieval/answering.py` filters weak results and synthesizes the final answer.
-8. `main.py` and `step6.py` provide the CLI entrypoint.
+7. `src/generation/context_builder.py` builds a compact prompt context.
+8. `src/generation/llm.py` calls Gemini 2.5 Flash through Google AI Studio.
+9. `src/retrieval/answering.py` applies the confidence gate and formats the final output.
+10. `main.py` and `step6.py` provide the CLI entrypoint.
 
 ## Tradeoffs
 - A Markdown knowledge base adds one more build stage, but it removes HTML noise and makes debugging much easier.
 - Structural chunking is more deterministic than fixed-size splitting, but it requires cleaner source markup.
-- The system is extractive rather than generative, which reduces hallucination risk.
+- The system is grounded before generation, which reduces hallucination risk compared with direct prompt-only generation.
 - Chroma keeps the stack simple and local, but it is not a distributed retrieval backend.
 
 ## Chunking Decisions
@@ -33,16 +35,15 @@ The repository is organized around a Markdown knowledge base rather than raw HTM
 
 ## Confidence Threshold
 - The retriever keeps the top `5` matches.
-- Only chunks within `90%` of the best score are considered for synthesis.
+- Only chunks within `90%` of the best score are considered for generation.
 - If the best score is below `0.70`, the system refuses to answer.
-- This prevents weak semantic matches from being presented as facts.
+- Gemini is never called when the confidence gate fails.
 
 ## Evaluation Notes
-- The repository includes a generated evaluation report in `docs/evaluation_report.md`.
-- The report captures top1 relevance, false positives, confidence distribution, and latency.
+- The repository includes a generated evaluation report in `docs/rag_evaluation.md`.
+- The report captures retrieval confidence, generation latency, answer quality, and hallucination count.
 
 ## Reviewer Notes
 - The code favors clear module boundaries and typed data models.
 - Build artifacts are separated from source code.
 - The repository is ready for a portfolio review or a technical screening discussion.
-
