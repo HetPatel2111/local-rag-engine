@@ -9,11 +9,17 @@ Usage (from repo root):
 from __future__ import annotations
 
 import math
+import sys
+import uuid
 from pathlib import Path
 
 import chromadb
 from qdrant_client import QdrantClient
 from qdrant_client.http import models as qmodels
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
 
 from src.utils.env import getenv, load_dotenv
 
@@ -23,6 +29,60 @@ def _require_env(name: str) -> str:
     if not value:
         raise SystemExit(f"Missing required env var: {name}")
     return value
+
+
+def _normalize_embeddings(raw: object) -> list[list[float]]:
+    """Normalize Chroma embeddings output into List[List[float]]."""
+    if raw is None:
+        return []
+
+    # Chroma may return: List[vector], List[List[vector]], or a numpy array.
+    if hasattr(raw, "tolist"):
+        raw = raw.tolist()  # type: ignore[assignment]
+
+    if not isinstance(raw, list) or not raw:
+        return []
+
+    first = raw[0]
+    if hasattr(first, "tolist"):
+        first = first.tolist()  # type: ignore[assignment]
+
+    # Case: raw is [float, float, ...] (single vector)
+    if isinstance(first, (int, float)):
+        return [[float(v) for v in raw]]  # type: ignore[arg-type]
+
+    # Case: raw is [[float, ...], [float, ...], ...]
+    if isinstance(first, list) and first and isinstance(first[0], (int, float)):
+        return [[float(v) for v in vec] for vec in raw]  # type: ignore[arg-type]
+
+    # Case: raw is [[vector]] (extra nesting)
+    if isinstance(first, list) and first and isinstance(first[0], list):
+        flattened: list[list[float]] = []
+        for item in raw:  # type: ignore[assignment]
+            if hasattr(item, "tolist"):
+                item = item.tolist()
+            if isinstance(item, list) and item and isinstance(item[0], list):
+                for vec in item:
+                    if isinstance(vec, list):
+                        flattened.append([float(v) for v in vec])
+        return flattened
+
+    return []
+
+
+def _normalize_list_field(raw: object) -> list:
+    """Normalize Chroma fields (documents/metadatas) into a simple list."""
+    if raw is None:
+        return []
+    if hasattr(raw, "tolist"):
+        raw = raw.tolist()  # type: ignore[assignment]
+    if isinstance(raw, dict):
+        return list(raw.values())
+    if not isinstance(raw, list):
+        return []
+    if raw and isinstance(raw[0], list):
+        return raw[0]
+    return raw
 
 
 def main() -> None:
@@ -46,10 +106,10 @@ def main() -> None:
     qdrant = QdrantClient(url=qdrant_url, api_key=qdrant_api_key)
 
     sample = collection.get(limit=1, include=["embeddings"])
-    sample_embeddings = (sample.get("embeddings") or [[]])[0]
-    if not sample_embeddings:
+    sample_vectors = _normalize_embeddings(sample.get("embeddings", None))
+    if not sample_vectors:
         raise SystemExit("Chroma collection has no embeddings to migrate.")
-    vector_size = len(sample_embeddings[0])
+    vector_size = len(sample_vectors[0])
 
     qdrant.recreate_collection(
         collection_name=collection_name,
@@ -69,24 +129,28 @@ def main() -> None:
         )
 
         ids = list(raw.get("ids") or [])
-        embeddings = (raw.get("embeddings") or [[]])[0]
-        documents = (raw.get("documents") or [[]])[0]
-        metadatas = (raw.get("metadatas") or [[]])[0]
+        embeddings = _normalize_embeddings(raw.get("embeddings", None))
+        documents = _normalize_list_field(raw.get("documents", None))
+        metadatas = _normalize_list_field(raw.get("metadatas", None))
 
         points: list[qmodels.PointStruct] = []
         for idx, point_id in enumerate(ids):
             meta = metadatas[idx] if idx < len(metadatas) and isinstance(metadatas[idx], dict) else {}
+            original_id = str(point_id)
             payload = {
                 "url": str(meta.get("url", "")),
                 "title": str(meta.get("title", "")),
                 "section": str(meta.get("section", "")),
-                "chunk_id": str(meta.get("chunk_id", "")) or str(point_id),
+                "chunk_id": str(meta.get("chunk_id", "")) or original_id,
+                "chroma_id": original_id,
                 "text": str(documents[idx]) if idx < len(documents) else "",
             }
             vector = embeddings[idx] if idx < len(embeddings) else None
             if vector is None:
                 continue
-            points.append(qmodels.PointStruct(id=str(point_id), vector=vector, payload=payload))
+            # Qdrant point IDs must be an unsigned int or UUID.
+            point_uuid = uuid.uuid5(uuid.NAMESPACE_URL, original_id)
+            points.append(qmodels.PointStruct(id=str(point_uuid), vector=vector, payload=payload))
 
         qdrant.upsert(collection_name=collection_name, points=points, wait=True)
         print(f"[{batch_index + 1}/{batches}] Upserted {len(points)} points")
@@ -96,4 +160,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
