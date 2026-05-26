@@ -80,6 +80,15 @@ Create a local `.env` file with:
 GOOGLE_API_KEY=your_google_ai_studio_api_key
 ```
 
+### Optional: Qdrant Cloud (hosted vector DB)
+If you want to deploy without a local `chroma_db/`, set:
+```env
+QDRANT_URL=https://xxxxxx.cloud.qdrant.io
+QDRANT_API_KEY=your_qdrant_api_key
+QDRANT_COLLECTION=vite_docs
+```
+When `QDRANT_URL` and `QDRANT_API_KEY` are present, the API will use Qdrant for retrieval automatically.
+
 ## Quick Start
 1. Build the corpus and index:
 ```powershell
@@ -103,6 +112,19 @@ npm install
 npm run dev
 ```
 The UI calls `POST /ask` on `http://localhost:8000` by default. To override, set `VITE_API_BASE_URL` in `frontend/.env.local`.
+
+### Migrate local Chroma → Qdrant Cloud
+1. Create a free Qdrant Cloud cluster and copy the URL + API key.
+2. Export env vars (PowerShell):
+```powershell
+$env:QDRANT_URL="https://xxxxxx.cloud.qdrant.io"
+$env:QDRANT_API_KEY="..."
+$env:QDRANT_COLLECTION="vite_docs"
+```
+3. Run migration (reads from local `chroma_db/`):
+```powershell
+python scripts/migrate_chroma_to_qdrant.py
+```
 
 To generate the RAG evaluation report:
 ```powershell
