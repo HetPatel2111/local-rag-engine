@@ -25,6 +25,7 @@ def _normalize_origin(value: str) -> str:
     return origin
 
 raw_origins = (getenv("CORS_ALLOW_ORIGINS") or "").strip()
+allow_origin_regex = (getenv("CORS_ALLOW_ORIGIN_REGEX") or "").strip() or None
 extra_origins = (
     [_normalize_origin(item) for item in raw_origins.split(",") if _normalize_origin(item)]
     if raw_origins
@@ -40,6 +41,7 @@ allow_origins = [
 app.add_middleware(
     CORSMiddleware,
     allow_origins=allow_origins,
+    allow_origin_regex=allow_origin_regex,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
