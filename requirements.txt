@@ -4,6 +4,7 @@ fastapi
 google-genai
 langchain-huggingface
 qdrant-client
+fastembed
 requests
 sentence-transformers
 uvicorn[standard]
