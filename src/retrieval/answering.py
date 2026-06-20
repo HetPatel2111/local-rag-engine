@@ -140,8 +140,23 @@ def _extractive_fallback(query: str, results: list[RetrievalResult]) -> str:
     return " ".join(selected).strip() or REFUSAL_MESSAGE
 
 
+def _generation_mode() -> str:
+    """Return the configured generation mode.
+
+    The repo now defaults to the offline extractive path so the whole pipeline
+    works end-to-end without any external API key.
+    """
+    return (getenv("GENERATION_MODE") or "extractive").strip().lower()
+
+
+def _has_gemini_key() -> bool:
+    """Check whether Gemini generation is actually available."""
+    return bool((getenv("GOOGLE_API_KEY") or getenv("GEMINI_API_KEY")).strip())
+
+
 def answer_query(retriever: Retriever, query: str) -> AnswerResult:
     """Retrieve, filter, build context, and optionally call Gemini."""
+    local_only = _generation_mode() in {"extractive", "local", "offline"} or not _has_gemini_key()
     results = search(retriever, query=query, k=TOP_K)
     if not results:
         return AnswerResult(
@@ -149,7 +164,7 @@ def answer_query(retriever: Retriever, query: str) -> AnswerResult:
             confidence=0.0,
             found=False,
             sources=[],
-            model=MODEL_NAME,
+            model=EXTRACTIVE_MODEL_NAME if local_only else MODEL_NAME,
         )
 
     best_score = results[0].score
@@ -161,7 +176,7 @@ def answer_query(retriever: Retriever, query: str) -> AnswerResult:
             sources=[],
             title=results[0].title,
             url=results[0].url,
-            model=MODEL_NAME,
+            model=EXTRACTIVE_MODEL_NAME if local_only else MODEL_NAME,
             retrieved_count=len(results),
         )
 
@@ -187,7 +202,7 @@ def answer_query(retriever: Retriever, query: str) -> AnswerResult:
     )
 
     filtered_results = _best_chunk_filter(results)
-    if (getenv("GENERATION_MODE") or "").strip().lower() == "extractive":
+    if local_only:
         answer = _extractive_fallback(query, filtered_results)
         found = answer != REFUSAL_MESSAGE
         return AnswerResult(

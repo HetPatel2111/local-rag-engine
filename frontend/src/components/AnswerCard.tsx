@@ -15,25 +15,18 @@ type Props = {
 
 function Skeleton() {
   return (
-    <div className="card fadeIn">
+    <div className="responseCard shimmer">
       <div className="row">
-        <div className="skeleton skTitle" />
+        <div>
+          <div className="skeleton skTitle" />
+          <div className="skeleton skText short" />
+        </div>
         <div className="skeleton skPill" />
       </div>
-      <div className="skeleton skLine" />
-      <div className="skeleton skLine" />
-      <div className="skeleton skLine short" />
+      <div className="skeleton skAnswer" />
+      <div className="skeleton skAnswer short" />
+      <div className="skeleton skAnswer tiny" />
       <div className="divider" />
-      <div className="row">
-        <div className="skeleton skLabel" />
-        <div className="skeleton skLabel" />
-      </div>
-      <div className="skeleton skBar" />
-      <div className="divider" />
-      <div className="row">
-        <div className="skeleton skLabel" />
-        <div className="skeleton skLabel" />
-      </div>
       <div className="grid">
         <div className="skeleton skCard" />
         <div className="skeleton skCard" />
@@ -45,9 +38,16 @@ function Skeleton() {
 export default function AnswerCard({ ui, onRetry }: Props) {
   if (ui.status === "idle") {
     return (
-      <div className="card subtle">
-        <div className="muted">Tip</div>
-        <div className="body">Press Enter to submit. Results will appear here.</div>
+      <div className="responseCard emptyState">
+        <div className="emptyBadge">Ready</div>
+        <h2 className="emptyTitle">Your answer will appear here.</h2>
+        <p className="emptyBody">
+          Ask a docs question, then inspect the evidence, confidence, and sources that support the answer.
+        </p>
+        <div className="emptyTips">
+          <span className="pill">Try "What is Vite?"</span>
+          <span className="pill">Try "How does HMR work?"</span>
+        </div>
       </div>
     );
   }
@@ -55,11 +55,11 @@ export default function AnswerCard({ ui, onRetry }: Props) {
   if (ui.status === "loading") {
     return (
       <>
-        <div className="callout fadeIn">
+        <div className="callout">
           <div className="calloutDot" />
           <div>
-            <div className="calloutTitle">Generating answer…</div>
-            <div className="calloutSub">Query: “{ui.query}”</div>
+            <div className="calloutTitle">Searching local evidence</div>
+            <div className="calloutSub">Query: "{ui.query}"</div>
           </div>
         </div>
         <Skeleton />
@@ -69,11 +69,11 @@ export default function AnswerCard({ ui, onRetry }: Props) {
 
   if (ui.status === "error") {
     return (
-      <div className="card fadeIn">
-        <div className="row">
+      <div className="responseCard">
+        <div className="panelHeader">
           <div>
-            <div className="cardTitle">Error</div>
-            <div className="muted">Query: “{ui.query}”</div>
+            <div className="cardTitle">Connection problem</div>
+            <div className="muted">Query: "{ui.query}"</div>
           </div>
           <button className="secondaryButton" type="button" onClick={onRetry}>
             Retry
@@ -81,7 +81,7 @@ export default function AnswerCard({ ui, onRetry }: Props) {
         </div>
         <div className="errorBox">{ui.message}</div>
         <div className="muted small">
-          Make sure your FastAPI server is running and reachable at{" "}
+          Check that the FastAPI server is running at{" "}
           <code>{import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000"}</code>.
         </div>
       </div>
@@ -90,43 +90,58 @@ export default function AnswerCard({ ui, onRetry }: Props) {
 
   const data = ui.data;
   const confidence = clamp01(data.confidence);
+  const confidenceLabel = data.found ? "Grounded" : "Weak match";
 
   return (
-    <div className="card fadeIn">
-      <div className="row">
+    <div className="responseCard">
+      <div className="panelHeader">
         <div>
-          <div className="cardTitle">Answer</div>
-          <div className="muted">Query: “{data.query}”</div>
+          <div className="eyebrow">Answer</div>
+          <div className="cardTitle">{data.found ? "Grounded answer" : "No strong match"}</div>
+          <div className="muted">Query: "{data.query}"</div>
         </div>
         <div className="pillGroup">
           <span className="pill">
-            <span className="muted">Model:</span> {data.model || "—"}
+            <span className="muted">Model</span> {data.model || "Unknown"}
           </span>
           <span className="pill">
-            <span className="muted">Latency:</span> {formatMs(data.latency_ms)}
+            <span className="muted">Latency</span> {formatMs(data.latency_ms)}
           </span>
+          <span className="pill">
+            <span className="muted">Status</span> {confidenceLabel}
+          </span>
+        </div>
+      </div>
+
+      <div className="answerBlock">{data.answer || "No answer returned."}</div>
+
+      <div className="metricsGrid">
+        <div className="metricCard">
+          <div className="metricLabel">Confidence</div>
+          <div className="metricValue">{Math.round(confidence * 100)}%</div>
+          <div className="progress" aria-label="Confidence">
+            <div className="progressFill" style={{ width: `${confidence * 100}%` }} />
+          </div>
+        </div>
+        <div className="metricCard">
+          <div className="metricLabel">Sources</div>
+          <div className="metricValue">{data.sources?.length ?? 0}</div>
+          <div className="metricNote">Supporting URLs returned with the answer</div>
+        </div>
+        <div className="metricCard">
+          <div className="metricLabel">Finish</div>
+          <div className="metricValue">{data.finish_reason || "N/A"}</div>
+          <div className="metricNote">Generation metadata or offline fallback status</div>
         </div>
       </div>
 
       <div className="divider" />
 
-      <div className="answerText">{data.answer || "—"}</div>
-
-      <div className="divider" />
-
-      <div className="row">
-        <div className="sectionTitle">Confidence</div>
-        <div className="muted">{Math.round(confidence * 100)}%</div>
-      </div>
-      <div className="progress" aria-label="Confidence">
-        <div className="progressFill" style={{ width: `${confidence * 100}%` }} />
-      </div>
-
-      <div className="divider" />
-
-      <div className="row">
-        <div className="sectionTitle">Sources</div>
-        <div className="muted small">{data.sources?.length ?? 0}</div>
+      <div className="panelHeader">
+        <div>
+          <div className="sectionTitle">Sources</div>
+          <div className="muted small">{data.sources?.length ?? 0} item(s)</div>
+        </div>
       </div>
       {data.sources?.length ? (
         <div className="grid">
@@ -140,4 +155,3 @@ export default function AnswerCard({ ui, onRetry }: Props) {
     </div>
   );
 }
-

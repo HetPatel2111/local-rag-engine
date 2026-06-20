@@ -1,46 +1,48 @@
 # semantic-docs-rag
-Production-style Retrieval-Augmented Generation for website ingestion, semantic search, and grounded Gemini 2.5 Flash answers using Python, Hugging Face embeddings, ChromaDB, and Google AI Studio.
+Local-first retrieval-augmented generation for website ingestion, semantic search, and grounded answers using Python, local chunk retrieval, ChromaDB, and optional Gemini generation.
 
 ## Overview
-This project turns the Vite documentation site into a local knowledge system. It downloads sitemap URLs, cleans HTML, converts pages into Markdown, chunks by document structure, embeds the chunks, stores them in a persistent Chroma database, and answers questions with confidence gating plus Gemini generation.
+This project turns the Vite documentation site into a local knowledge system. It downloads sitemap URLs, cleans HTML, converts pages into Markdown, chunks by document structure, and answers questions with confidence gating plus an offline extractive fallback.
 
-The architecture is designed to be easy to debug, easy to explain in interviews, and resilient against noisy HTML, weak matches, and out-of-domain questions.
+The default setup is now fully local:
+- retrieval runs over `data/chunks/chunks.json`
+- answers default to `GENERATION_MODE=extractive`
+- the browser UI talks to the local FastAPI backend
 
 ## Features
 - [x] Sitemap-driven ingestion
 - [x] HTML to Markdown knowledge base
 - [x] Structural chunking from Markdown hierarchy
-- [x] Hugging Face embeddings with `BAAI/bge-small-en-v1.5`
+- [x] Local chunk retrieval
 - [x] Persistent local Chroma storage
 - [x] Confidence-aware retrieval filtering
 - [x] Out-of-domain refusal behavior
-- [x] Gemini 2.5 Flash answer generation
+- [x] Offline extractive answer generation
 - [x] Interactive CLI
-- [x] Markdown evaluation reports
+- [x] FastAPI backend
+- [x] React frontend
 
 ## Architecture
 ```text
 Website
   ->
-Sitemap Extraction
+Sitemap extraction
   ->
 Fetch HTML
   ->
 Convert HTML to Markdown
   ->
-Store Markdown Knowledge Base
+Store Markdown knowledge base
   ->
-Structural Chunking
+Structural chunking
   ->
-Embeddings
+Local chunk corpus
   ->
-Local ChromaDB
+Local retrieval
   ->
-Retrieval
+Confidence filtering
   ->
-Confidence Filtering
-  ->
-Gemini 2.5 Flash
+Answer formatting
 ```
 
 ## Tech Stack
@@ -48,24 +50,25 @@ Gemini 2.5 Flash
 |---|---|---|
 | Language | Python | Pipeline, retrieval, generation, CLI |
 | HTML parsing | BeautifulSoup | Clean extraction of meaningful content |
-| Embeddings | HuggingFaceEmbeddings | Dense semantic vectors |
-| Vector store | ChromaDB | Local persistent retrieval index |
-| Generation | Google AI Studio / Gemini 2.5 Flash | Grounded answer synthesis |
-| HTTP | requests | Sitemap and page downloads |
+| Retrieval | Local lexical scorer | Offline matching over the chunk corpus |
+| Vector store | ChromaDB | Optional persistent index for future semantic builds |
+| Generation | Offline extractive fallback | Grounded answer synthesis without external APIs |
+| HTTP | FastAPI | Local API server |
+| Frontend | React + Vite | Browser UI |
 | Testing | unittest | Lightweight validation |
 
 ## Retrieval Pipeline
-`sitemap -> HTML fetch -> Markdown KB -> structural chunking -> embedding -> Chroma -> retrieval -> confidence filtering -> Gemini`
+`sitemap -> HTML fetch -> Markdown KB -> structural chunking -> local chunk corpus -> retrieval -> confidence filtering -> extractive answer`
 
 1. The sitemap is fetched and deduplicated.
 2. Each page is downloaded and cleaned.
 3. Clean content is converted to Markdown and stored under `knowledge_base/`.
 4. Markdown is chunked by heading structure instead of fixed-size windows.
-5. Chunks are embedded with `BAAI/bge-small-en-v1.5`.
-6. Embeddings are persisted in local Chroma at `./chroma_db`.
-7. Retrieval keeps the strongest chunks, filters weak matches, builds a compact context, and sends it to Gemini 2.5 Flash.
+5. Chunks are written to `data/chunks/chunks.json`.
+6. Local retrieval scores the corpus directly.
+7. Strong matches are turned into grounded answers with the extractive fallback path.
 
-## Installation
+## Local Setup
 ```powershell
 python -m venv venv
 venv\Scripts\activate
@@ -77,98 +80,41 @@ Recommended Python version: `3.11` or `3.12`.
 ## Environment
 Create a local `.env` file with:
 ```env
-GOOGLE_API_KEY=your_google_ai_studio_api_key
-```
-
-### Optional: Qdrant Cloud (hosted vector DB)
-If you want to deploy without a local `chroma_db/`, set:
-```env
-QDRANT_URL=https://xxxxxx.cloud.qdrant.io
-QDRANT_API_KEY=your_qdrant_api_key
-QDRANT_COLLECTION=vite_docs
-QDRANT_RETRIEVAL_MODE=lexical
-```
-When `QDRANT_URL` and `QDRANT_API_KEY` are present, the API will use Qdrant for retrieval automatically.
-Use `QDRANT_RETRIEVAL_MODE=lexical` on small free hosts to avoid loading a local embedding model at request time. Use `semantic` only when the host has enough memory for the embedding model.
-
-For free deployments where Gemini quota may be exhausted, you can temporarily set:
-```env
+RETRIEVAL_BACKEND=local
 GENERATION_MODE=extractive
-GEMINI_RETRY_ATTEMPTS=1
 ```
-`GENERATION_MODE=extractive` returns grounded text directly from retrieved chunks without calling Gemini.
 
-## Quick Start
-1. Build the corpus and index:
+If you want Gemini generation instead of offline extractive answers, add:
+```env
+GOOGLE_API_KEY=your_google_ai_studio_api_key
+GENERATION_MODE=gemini
+```
+
+## Run Local
+1. Build the corpus and local artifacts:
 ```powershell
 python build.py
 ```
-2. Start the CLI:
-```powershell
-python main.py
-```
-3. Ask a question in the prompt.
-
-## Web API + Frontend UI
-Start the FastAPI server (port `8000`):
+2. Start the FastAPI server:
 ```powershell
 python backend\main.py
 ```
-Then start the React UI (port `5173`):
+3. Start the React UI:
 ```powershell
 cd frontend
-npm install
 npm run dev
 ```
-The UI calls `POST /ask` on `http://localhost:8000` by default. To override, set `VITE_API_BASE_URL` in `frontend/.env.local`.
-
-### Migrate local Chroma → Qdrant Cloud
-1. Create a free Qdrant Cloud cluster and copy the URL + API key.
-2. Export env vars (PowerShell):
+4. Optional CLI:
 ```powershell
-$env:QDRANT_URL="https://xxxxxx.cloud.qdrant.io"
-$env:QDRANT_API_KEY="..."
-$env:QDRANT_COLLECTION="vite_docs"
-```
-3. Run migration (reads from local `chroma_db/`):
-```powershell
-python scripts/migrate_chroma_to_qdrant.py
+python main.py
 ```
 
-To generate the RAG evaluation report:
-```powershell
-python evaluate.py
-```
+The browser UI calls `POST /ask` on `http://localhost:8000` by default. To override, set `VITE_API_BASE_URL` in `frontend/.env.local`.
 
 ## Example Queries
 - `What is Vite?`
 - `How does HMR work?`
 - `What is the capital of France?`
-
-## Example Output
-```text
-==================================================
-QUERY
-What is Vite?
-
-ANSWER
-Vite is a build tool designed to provide a faster and leaner development experience for modern web projects.
-
-CONFIDENCE
-0.8200
-
-SOURCES
-https://vite.dev/guide/
-
-MODEL
-Gemini 2.5 Flash
-==================================================
-```
-
-```text
-ANSWER
-I don't know based on the indexed documents.
-```
 
 ## Confidence Threshold Logic
 - Retrieve the top `5` chunks.
@@ -177,83 +123,22 @@ I don't know based on the indexed documents.
 - If the query is out of domain or the retrieved content is too weak, return:
   - `I don't know based on the indexed documents.`
 
-## Folder Structure
-```text
-repo/
-├── backend/                 # FastAPI server (`POST /ask`)
-├── frontend/                # React + Vite UI
-├── src/
-│   ├── ingestion/
-│   ├── processing/
-│   ├── embeddings/
-│   ├── retrieval/
-│   ├── generation/
-│   ├── evaluation/
-│   └── utils/
-├── knowledge_base/
-├── chroma_db/
-├── data/
-├── tests/
-├── docs/
-├── screenshots/
-├── README.md
-├── requirements.txt
-├── .gitignore
-├── LICENSE
-└── main.py
+## Frontend Notes
+The UI now uses a stronger visual hierarchy:
+- a layered hero section
+- quick example prompts
+- clearer runtime status
+- richer answer cards
+- improved source cards
+
+## Optional Qdrant
+If you want Qdrant instead of the local retriever, set:
+```env
+QDRANT_URL=https://xxxxxx.cloud.qdrant.io
+QDRANT_API_KEY=your_qdrant_api_key
+QDRANT_COLLECTION=vite_docs
+RETRIEVAL_BACKEND=qdrant
 ```
-
-## Evaluation Results
-Run `python evaluate.py` to generate `docs/rag_evaluation.md`.
-The report captures:
-- retrieval confidence
-- generation latency
-- answer quality
-- hallucination count
-
-## Design Decisions
-- Markdown is stored as an intermediate knowledge base to remove HTML noise before chunking.
-- Structural chunking follows heading hierarchy to keep sections stable and debuggable.
-- Chroma was selected because it is local, persistent, and simple to inspect.
-- Confidence thresholds reduce false positives and keep out-of-domain queries from producing fabricated answers.
-- Gemini is only called after retrieval passes the confidence gate.
-
-## Limitations
-- The system depends on the quality of the source documentation and the cleaning rules.
-- CPU-only embedding can still be slow on some machines.
-- Gemini output quality depends on retrieved context quality.
-- The current design is grounded and concise, but not fully autonomous or agentic.
-
-## Future Improvements
-- Add cross-encoder reranking.
-- Add hybrid keyword + semantic search.
-- Add deployment support for cloud or local serving.
-- Add stronger answer evaluation with human review.
-
-## Key Learnings
-- RAG quality improves more from document hygiene than from prompt tricks.
-- Structural chunking is easier to debug than fixed-size windows.
-- Confidence gating is essential for honest refusal behavior.
-- A clean intermediate Markdown corpus makes the system much easier to maintain.
 
 ## License
 This project is licensed under the MIT License. See [LICENSE](LICENSE).
-
-## GitHub Polish
-- Suggested repository name: `semantic-docs-rag`
-- Suggested description: `Production-inspired Retrieval-Augmented Generation (RAG) system for website ingestion, semantic search, and confidence-aware retrieval using Python, Hugging Face embeddings, ChromaDB, and Gemini 2.5 Flash.`
-- Suggested topics: `python`, `rag`, `chromadb`, `huggingface`, `beautifulsoup`, `semantic-search`, `retrieval-augmented-generation`, `gemini`, `vite`, `nlp`
-- Suggested commit messages:
-  - `feat: add markdown knowledge base pipeline`
-  - `feat: introduce structural chunking`
-  - `feat: add Gemini generation`
-  - `docs: rewrite repository for publication`
-  - `test: add smoke tests for synthesis`
-- First release notes:
-  - `v1.0.0`
-  - Markdown knowledge base
-  - Structural chunking
-  - Persistent Chroma retrieval
-  - Confidence-aware refusal behavior
-  - Gemini 2.5 Flash generation
-  - Interactive CLI

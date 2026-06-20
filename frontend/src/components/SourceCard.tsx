@@ -5,11 +5,21 @@ type Props = {
   value: string;
 };
 
+function formatSourceLabel(value: string): string {
+  try {
+    const url = new URL(value);
+    const path = url.pathname === "/" ? "" : url.pathname;
+    return `${url.hostname}${path}`;
+  } catch {
+    return value;
+  }
+}
+
 export default function SourceCard({ value }: Props) {
   const [copied, setCopied] = useState(false);
   const isUrl = useMemo(() => isProbablyUrl(value), [value]);
-
-  const label = value.length > 110 ? `${value.slice(0, 110)}…` : value;
+  const label = formatSourceLabel(value);
+  const displayLabel = label.length > 92 ? `${label.slice(0, 92)}...` : label;
 
   async function onClick() {
     if (isUrl) {
@@ -27,13 +37,12 @@ export default function SourceCard({ value }: Props) {
   }
 
   return (
-    <button className="card sourceCard" type="button" onClick={onClick}>
+    <button className="sourceCard" type="button" onClick={onClick}>
       <div className="sourceTop">
-        <div className="sourceTitle">{label}</div>
+        <div className="sourceTitle">{displayLabel}</div>
         <div className="sourceMeta">{isUrl ? "Open" : copied ? "Copied" : "Copy"}</div>
       </div>
-      {isUrl ? <div className="sourceUrl">{value}</div> : null}
+      <div className="sourceUrl">{value}</div>
     </button>
   );
 }
-

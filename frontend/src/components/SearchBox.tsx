@@ -24,21 +24,22 @@ export default function SearchBox({
     inputRef.current?.focus();
   }, []);
 
-  const placeholder = useMemo(
-    () => "Ask a question (e.g., “What is our leave policy?”)",
-    []
-  );
+  const placeholder = useMemo(() => "Ask a question about the indexed docs", []);
 
   return (
     <form
-      className="search"
+      className="searchPanel"
       onSubmit={(e) => {
         e.preventDefault();
         onSubmit(value);
       }}
     >
       <div className="searchField">
+        <label className="searchLabel" htmlFor="query">
+          Ask a question
+        </label>
         <input
+          id="query"
           ref={inputRef}
           className="searchInput"
           value={value}
@@ -46,14 +47,19 @@ export default function SearchBox({
           placeholder={placeholder}
           disabled={disabled}
           aria-label="Query"
+          spellCheck={false}
         />
       </div>
 
-      <button className="primaryButton" type="submit" disabled={!canSubmit}>
-        {disabled ? <LoadingSpinner size={16} /> : null}
-        <span>{submitLabel}</span>
-      </button>
+      <div className="searchActions">
+        <button className="primaryButton" type="submit" disabled={!canSubmit}>
+          {disabled ? <LoadingSpinner size={16} /> : null}
+          <span>{submitLabel}</span>
+        </button>
+        <div className="searchHint">
+          Press Enter to search. Use the example chips for a fast start.
+        </div>
+      </div>
     </form>
   );
 }
-
